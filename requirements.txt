@@ -34,7 +34,7 @@ pypdf==4.0.1
 Pillow==10.2.0
 
 # Video Metadata
-yt-dlp==2024.1.19
+yt-dlp>=2024.3.10
 
 # Background Scheduler
 apscheduler==3.10.4
