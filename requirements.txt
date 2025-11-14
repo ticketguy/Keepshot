@@ -1,0 +1,13 @@
+fastapi
+uvicorn
+sqlalchemy
+alembic
+psycopg2-binary
+pydantic
+celery[redis]
+redis
+requests
+beautifulsoup4
+httpx
+python-dotenv
+openai
