@@ -437,6 +437,118 @@ class CustomAI(AIProvider):
 WEBHOOK_URL=https://your-service.com/webhook
 ```
 
+## Production Deployment
+
+### Official Instance: keepshot.xyz
+
+**Production API:** `https://api.keepshot.xyz`
+
+#### Architecture in Production
+
+```
+                    ┌──────────────────┐
+                    │   keepshot.xyz   │
+                    │   (Frontend)     │
+                    └────────┬─────────┘
+                             │
+                    ┌────────▼─────────┐
+    Internet ───────┤  Nginx + SSL     │
+                    │  (Let's Encrypt) │
+                    └────────┬─────────┘
+                             │
+                    ┌────────▼─────────┐
+                    │  FastAPI Backend │
+                    │  (Docker)        │
+                    └────────┬─────────┘
+                             │
+           ┌─────────────────┴─────────────────┐
+           │                                   │
+    ┌──────▼──────┐                   ┌───────▼──────┐
+    │ PostgreSQL  │                   │File Storage  │
+    │  (Docker)   │                   │   (Volume)   │
+    └─────────────┘                   └──────────────┘
+```
+
+#### Production Stack Components
+
+1. **Nginx**
+   - Reverse proxy
+   - SSL/TLS termination
+   - Rate limiting (100 req/min)
+   - WebSocket support
+   - CORS configuration
+
+2. **Let's Encrypt**
+   - Automatic SSL certificates
+   - Auto-renewal every 12 hours
+   - TLS 1.2+ only
+
+3. **FastAPI Application**
+   - Multiple worker processes
+   - Health checks
+   - Auto-restart on failure
+   - Structured JSON logging
+
+4. **PostgreSQL**
+   - Persistent volumes
+   - Regular backups
+   - Connection pooling
+   - Performance indexes
+
+#### Deployment Methods
+
+**Option 1: VPS Deployment** (Recommended for keepshot.xyz)
+```bash
+# One-command setup
+curl -sSL https://raw.githubusercontent.com/yourusername/keepshot/main/setup-production.sh | sudo bash
+```
+
+**Option 2: Docker Compose**
+```bash
+docker-compose -f docker-compose.prod.yml up -d
+```
+
+**Option 3: Cloud Platforms**
+- Railway.app (easiest)
+- Render.com (includes SSL)
+- Fly.io (global edge deployment)
+
+See `DEPLOYMENT.md` for detailed instructions.
+
+#### Production Configuration
+
+```bash
+# Production environment
+DATABASE_URL=postgresql://user:pass@db:5432/keepshot_prod
+OPENAI_API_KEY=sk-production-key
+OPENAI_MODEL=gpt-4o-mini
+DEBUG=false
+ALLOWED_ORIGINS=https://keepshot.xyz,https://app.keepshot.xyz
+```
+
+#### Monitoring Endpoints
+
+```bash
+# Health check
+curl https://api.keepshot.xyz/health
+
+# Metrics
+curl https://api.keepshot.xyz/metrics
+
+# API Documentation
+open https://api.keepshot.xyz/docs
+```
+
+#### Security in Production
+
+- ✅ HTTPS enforced (Let's Encrypt SSL)
+- ✅ Rate limiting (Nginx)
+- ✅ CORS configured for specific domains
+- ✅ Database password secured
+- ✅ API keys in environment variables
+- ✅ Firewall configured (ports 80, 443)
+- ✅ Regular security updates
+
 ## Future Enhancements
 
 - [ ] Browser extension reference implementation
@@ -448,3 +560,6 @@ WEBHOOK_URL=https://your-service.com/webhook
 - [ ] Export/import functionality
 - [ ] Analytics dashboard
 - [ ] Plugin system for custom scrapers
+- [ ] CDN integration for global performance
+- [ ] Redis caching layer
+- [ ] Managed database migration (AWS RDS, Cloud SQL)

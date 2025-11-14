@@ -47,9 +47,16 @@ KeepShot is a production-ready, lightweight backend for monitoring bookmarks and
    ```
 
 4. **Access the API**
+
+   **Local Development:**
    - API: http://localhost:8000
    - Docs: http://localhost:8000/docs
    - Health: http://localhost:8000/health
+
+   **Production (keepshot.xyz):**
+   - API: https://api.keepshot.xyz
+   - Docs: https://api.keepshot.xyz/docs
+   - Health: https://api.keepshot.xyz/health
 
 That's it! KeepShot is now running.
 
@@ -62,7 +69,11 @@ That's it! KeepShot is now running.
 KeepShot is **auth-agnostic**. For development, send user ID in header:
 
 ```bash
+# Local Development
 curl -H "X-User-Id: user123" http://localhost:8000/api/v1/bookmarks
+
+# Production
+curl -H "X-User-Id: user123" https://api.keepshot.xyz/api/v1/bookmarks
 ```
 
 For production, implement your own auth middleware (see `app/dependencies.py`).
@@ -168,8 +179,13 @@ X-User-Id: user123
 ### WebSocket
 
 **Connect for Real-Time Notifications**
+
 ```javascript
+// Local Development
 const ws = new WebSocket('ws://localhost:8000/ws/user123');
+
+// Production
+const ws = new WebSocket('wss://api.keepshot.xyz/ws/user123');
 
 ws.onmessage = (event) => {
   const data = JSON.parse(event.data);
@@ -372,36 +388,107 @@ pytest tests/
 
 ## 📦 Deployment
 
-### Docker Compose (Recommended)
+### Local Development
 
 ```bash
 docker-compose up -d
 ```
 
-### Manual Deployment
+### Production Deployment (keepshot.xyz)
 
-1. Build Docker image
-   ```bash
-   docker build -t keepshot:latest .
+#### Option 1: VPS with Docker Compose + Nginx (Recommended)
+
+1. **Setup DNS**
+   ```
+   A Record: api.keepshot.xyz → [Your Server IP]
    ```
 
-2. Run with environment variables
+2. **Clone and Configure**
    ```bash
-   docker run -d \
-     -e DATABASE_URL=... \
-     -e OPENAI_API_KEY=... \
-     -p 8000:8000 \
-     keepshot:latest
+   git clone https://github.com/yourusername/keepshot.git
+   cd keepshot
+   cp .env.example .env
+   # Edit .env with production values
    ```
 
-### Production Considerations
+3. **Deploy with SSL**
+   ```bash
+   docker-compose -f docker-compose.prod.yml up -d
+   ```
 
-- Use a reverse proxy (Nginx, Traefik) for HTTPS
-- Set up proper PostgreSQL with backups
-- Configure CORS appropriately
-- Implement rate limiting
-- Monitor logs and metrics
-- Scale horizontally if needed
+This includes:
+- Nginx reverse proxy
+- Automatic SSL via Let's Encrypt
+- Production-ready PostgreSQL
+- Auto-restart on failure
+
+See `DEPLOYMENT.md` for detailed instructions.
+
+#### Option 2: Cloud Platforms
+
+**Railway.app** (Easiest)
+1. Connect GitHub repo
+2. Add environment variables
+3. Deploy automatically
+
+**Render.com**
+1. Create new Web Service
+2. Connect repo
+3. Set build command: `docker build`
+4. Auto SSL included
+
+**Fly.io**
+```bash
+fly launch
+fly secrets set OPENAI_API_KEY=sk-...
+fly deploy
+```
+
+#### Option 3: AWS/GCP/Azure
+
+- **Container**: ECS, Cloud Run, or Container Apps
+- **Database**: RDS, Cloud SQL, or Azure Database
+- **Load Balancer**: ALB/NLB with SSL certificate
+
+### Production Checklist
+
+- ✅ Configure proper DATABASE_URL (managed PostgreSQL recommended)
+- ✅ Add OPENAI_API_KEY to environment
+- ✅ Set DEBUG=false
+- ✅ Configure CORS for your domains
+- ✅ Implement authentication (JWT/OAuth/Portid)
+- ✅ Setup SSL/HTTPS (Let's Encrypt or cloud provider)
+- ✅ Configure backup strategy for database
+- ✅ Setup monitoring and logging
+- ✅ Implement rate limiting
+- ✅ Add health checks to load balancer
+
+### Environment Variables for Production
+
+```bash
+# Database (use managed PostgreSQL for production)
+DATABASE_URL=postgresql://user:pass@your-db-host:5432/keepshot
+
+# OpenAI
+OPENAI_API_KEY=sk-your-production-key
+OPENAI_MODEL=gpt-4o-mini
+
+# Server
+HOST=0.0.0.0
+PORT=8000
+DEBUG=false
+
+# Domain
+ALLOWED_ORIGINS=https://keepshot.xyz,https://app.keepshot.xyz
+
+# Monitoring
+DEFAULT_CHECK_INTERVAL=60
+MAX_CONCURRENT_CHECKS=20  # Increase for production
+
+# Storage (use cloud storage for scale)
+STORAGE_PATH=/app/storage
+MAX_FILE_SIZE=100
+```
 
 ---
 
@@ -412,6 +499,12 @@ docker-compose up -d
 ```swift
 // iOS - Share Sheet Extension
 import KeepShotSDK
+
+// Configure SDK with your API endpoint
+KeepShot.configure(
+    apiURL: "https://api.keepshot.xyz",
+    authProvider: PortIDAuthProvider()  // or your auth
+)
 
 func shareToKeepShot(url: URL) {
     KeepShot.shared.createBookmark(
@@ -426,12 +519,15 @@ func shareToKeepShot(url: URL) {
 
 ```javascript
 // Chrome Extension - Background Script
+const API_URL = 'https://api.keepshot.xyz';  // or 'http://localhost:8000' for dev
+
 chrome.bookmarks.onCreated.addListener((id, bookmark) => {
-  fetch('http://localhost:8000/api/v1/bookmarks', {
+  fetch(`${API_URL}/api/v1/bookmarks`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'X-User-Id': userId
+      'X-User-Id': userId,
+      'Authorization': `Bearer ${token}`  // Add your auth token
     },
     body: JSON.stringify({
       content_type: 'url',
@@ -449,11 +545,15 @@ chrome.bookmarks.onCreated.addListener((id, bookmark) => {
 // React Hook
 import { useState, useEffect } from 'react';
 
+const WS_URL = process.env.NODE_ENV === 'production'
+  ? 'wss://api.keepshot.xyz'
+  : 'ws://localhost:8000';
+
 function useKeepShot(userId: string) {
   const [notifications, setNotifications] = useState([]);
 
   useEffect(() => {
-    const ws = new WebSocket(`ws://localhost:8000/ws/${userId}`);
+    const ws = new WebSocket(`${WS_URL}/ws/${userId}`);
 
     ws.onmessage = (event) => {
       const data = JSON.parse(event.data);
@@ -521,13 +621,21 @@ Track academic papers for new versions:
 ### Health Check
 
 ```bash
+# Local
 curl http://localhost:8000/health
+
+# Production
+curl https://api.keepshot.xyz/health
 ```
 
 ### Metrics
 
 ```bash
+# Local
 curl http://localhost:8000/metrics
+
+# Production
+curl https://api.keepshot.xyz/metrics
 ```
 
 ### Logs
