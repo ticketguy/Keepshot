@@ -1,40 +1,47 @@
-import openai
-from ..config import OPENAI_API_KEY
-from .prompts import CHANGE_DETECTED_PROMPT, RELATED_SAVE_PROMPT, DUPLICATE_SAVE_PROMPT
-from app.main import clients
-import asyncio
+"""Notification service for sending real-time notifications"""
+from typing import Optional
+from app.models.notification import Notification
+from app.core.logging import get_logger
 
-openai.api_key = OPENAI_API_KEY
+logger = get_logger(__name__)
 
-async def generate_reminder_message(reminder_type: str, **kwargs):
+
+async def send_notification(user_id: str, notification: Notification):
     """
-    Generate AI reminder message based on type.
-    reminder_type: 'change', 'related', 'duplicate'
-    kwargs: context for the prompt
-    """
-    if reminder_type == "change":
-        prompt = CHANGE_DETECTED_PROMPT.format(**kwargs)
-    elif reminder_type == "related":
-        prompt = RELATED_SAVE_PROMPT.format(**kwargs)
-    elif reminder_type == "duplicate":
-        prompt = DUPLICATE_SAVE_PROMPT.format(**kwargs)
-    else:
-        raise ValueError("Unknown reminder type")
+    Send notification to user via WebSocket.
 
-    response = openai.ChatCompletion.create(
-        model="gpt-4",
-        messages=[{"role": "user", "content": prompt}],
-        max_tokens=60
-    )
-    return response.choices[0].message.content.strip()
-
-
-async def send_push_notification(user_id: int, message: str):
+    This imports the connection manager from main.py to send
+    notifications to connected WebSocket clients.
     """
-    Push notification to all connected WebSocket clients.
-    """
-    for client in clients:
-        try:
-            await client.send_text(message)
-        except:
-            pass
+    try:
+        # Import here to avoid circular imports
+        from app.main import manager
+
+        message = {
+            "type": "notification",
+            "data": {
+                "id": notification.id,
+                "bookmark_id": notification.bookmark_id,
+                "notification_type": notification.notification_type,
+                "title": notification.title,
+                "message": notification.message,
+                "created_at": notification.created_at.isoformat(),
+                "read": notification.read,
+            }
+        }
+
+        await manager.send_personal_message(user_id, message)
+
+        logger.info(
+            "notification_sent",
+            user_id=user_id,
+            notification_id=notification.id
+        )
+
+    except Exception as e:
+        logger.error(
+            "notification_send_failed",
+            user_id=user_id,
+            notification_id=notification.id,
+            error=str(e)
+        )
