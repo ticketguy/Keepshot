@@ -17,7 +17,7 @@ class User(Base):
 
     id = Column(String, primary_key=True, index=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    metadata = Column(JSON, default=dict)  # For custom builder data
+    extra_data = Column(JSON, default=dict)  # For custom builder data (renamed from metadata)
 
     # Relationships
     bookmarks = relationship("Bookmark", back_populates="user", cascade="all, delete-orphan")
