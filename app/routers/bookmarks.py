@@ -58,7 +58,7 @@ async def create_bookmark(
             description=data.description,
             raw_content=data.raw_content,
             file_path=scraped_data.get("file_path"),
-            metadata=data.metadata or scraped_data["metadata"],
+            platform_data=data.platform_data or scraped_data["metadata"],
             monitoring_enabled=data.monitoring_enabled,
             check_interval=data.check_interval,
         )
@@ -200,8 +200,8 @@ async def update_bookmark(
         bookmark.monitoring_enabled = data.monitoring_enabled
     if data.check_interval is not None:
         bookmark.check_interval = data.check_interval
-    if data.metadata is not None:
-        bookmark.metadata = data.metadata
+    if data.platform_data is not None:
+        bookmark.platform_data = data.platform_data
 
     db.commit()
     db.refresh(bookmark)

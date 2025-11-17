@@ -36,9 +36,9 @@ class Bookmark(Base):
     raw_content = Column(Text, nullable=True)  # For text snippets
     file_path = Column(Text, nullable=True)  # For downloaded files
 
-    # Metadata (platform-specific data)
+    # Platform-specific data (renamed from metadata to avoid SQLAlchemy conflict)
     # Example: {"tweet_id": "123", "author": "@user", "likes": 100}
-    metadata = Column(JSON, default=dict)
+    platform_data = Column(JSON, default=dict)
 
     # Monitoring configuration
     monitoring_enabled = Column(Boolean, default=True, nullable=False)

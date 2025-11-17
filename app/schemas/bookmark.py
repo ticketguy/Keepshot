@@ -14,7 +14,7 @@ class BookmarkCreate(BaseModel):
     title: Optional[str] = Field(None, max_length=500, description="Optional title")
     description: Optional[str] = Field(None, max_length=2000, description="Optional description")
     raw_content: Optional[str] = Field(None, description="Raw text content (for text type)")
-    metadata: Optional[Dict[str, Any]] = Field(default_factory=dict, description="Additional metadata")
+    platform_data: Optional[Dict[str, Any]] = Field(default_factory=dict, description="Platform-specific metadata")
 
     monitoring_enabled: bool = Field(True, description="Enable monitoring for changes")
     check_interval: int = Field(60, ge=5, le=10080, description="Check interval in minutes (5 min to 7 days)")
@@ -47,7 +47,7 @@ class BookmarkUpdate(BaseModel):
     description: Optional[str] = Field(None, max_length=2000)
     monitoring_enabled: Optional[bool] = None
     check_interval: Optional[int] = Field(None, ge=5, le=10080)
-    metadata: Optional[Dict[str, Any]] = None
+    platform_data: Optional[Dict[str, Any]] = None
 
 
 class BookmarkResponse(BaseModel):
@@ -61,7 +61,7 @@ class BookmarkResponse(BaseModel):
     description: Optional[str]
     raw_content: Optional[str]
     file_path: Optional[str]
-    metadata: Dict[str, Any]
+    platform_data: Dict[str, Any]
     monitoring_enabled: bool
     check_interval: int
     created_at: datetime
