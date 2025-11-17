@@ -123,16 +123,36 @@ chmod -R 755 nginx
 chmod +x setup-production.sh
 
 echo ""
-echo "9️⃣  Getting SSL certificate..."
-echo "   Starting nginx for certificate verification..."
+echo "9️⃣  Preparing nginx configuration..."
+# Temporarily use HTTP-only config for certificate acquisition
+if [ -f nginx/conf.d/api.keepshot.xyz.conf ]; then
+    mv nginx/conf.d/api.keepshot.xyz.conf nginx/conf.d/api.keepshot.xyz.conf.ssl
+    echo "   ✅ Backed up SSL configuration"
+fi
 
-# Start nginx temporarily
-docker compose -f docker-compose.prod.yml up -d nginx
+# Use init config for certificate acquisition
+if [ -f nginx/conf.d/api.keepshot.xyz.init.conf ]; then
+    cp nginx/conf.d/api.keepshot.xyz.init.conf nginx/conf.d/api.keepshot.xyz.conf
+    echo "   ✅ Using HTTP-only configuration for certificate acquisition"
+fi
 
-# Wait for nginx to start
-sleep 10
+echo ""
+echo "🔟 Starting production stack..."
+docker compose -f docker-compose.prod.yml up -d
 
-# Get certificate
+echo ""
+echo "1️⃣1️⃣  Waiting for services to start..."
+sleep 15
+
+echo ""
+echo "1️⃣2️⃣  Running database migrations..."
+docker compose -f docker-compose.prod.yml exec -T app alembic upgrade head || {
+    echo "   ⚠️  Migrations might have failed. Check logs:"
+    echo "   docker compose -f docker-compose.prod.yml logs app"
+}
+
+echo ""
+echo "1️⃣3️⃣  Getting SSL certificate..."
 echo "   Requesting SSL certificate from Let's Encrypt..."
 docker compose -f docker-compose.prod.yml run --rm certbot certonly \
     --webroot \
@@ -151,34 +171,33 @@ docker compose -f docker-compose.prod.yml run --rm certbot certonly \
         echo "   You can retry manually with:"
         echo "   cd $INSTALL_DIR"
         echo "   docker compose -f docker-compose.prod.yml run --rm certbot certonly --webroot --webroot-path=/var/www/certbot --email $EMAIL --agree-tos --no-eff-email -d $DOMAIN"
+        echo "   Then run: ./switch-to-https.sh"
         echo ""
-        read -p "Continue anyway? (y/N) " -n 1 -r
+        read -p "Continue without SSL? (y/N) " -n 1 -r
         echo
         if [[ ! $REPLY =~ ^[Yy]$ ]]; then
             exit 1
         fi
+        SSL_OBTAINED=false
     }
 
-# Stop temporary nginx
-docker compose -f docker-compose.prod.yml down
+# If SSL was obtained successfully, switch to HTTPS config
+if [ "$SSL_OBTAINED" != "false" ]; then
+    echo ""
+    echo "1️⃣4️⃣  Switching to HTTPS configuration..."
+    # Restore SSL config
+    if [ -f nginx/conf.d/api.keepshot.xyz.conf.ssl ]; then
+        mv nginx/conf.d/api.keepshot.xyz.conf.ssl nginx/conf.d/api.keepshot.xyz.conf
+        echo "   ✅ Restored SSL configuration"
+    fi
+
+    # Reload nginx
+    docker compose -f docker-compose.prod.yml restart nginx
+    echo "   ✅ Nginx reloaded with HTTPS"
+fi
 
 echo ""
-echo "🔟 Starting production stack..."
-docker compose -f docker-compose.prod.yml up -d
-
-echo ""
-echo "1️⃣1️⃣  Waiting for services to start..."
-sleep 15
-
-echo ""
-echo "1️⃣2️⃣  Running database migrations..."
-docker compose -f docker-compose.prod.yml exec -T app alembic upgrade head || {
-    echo "   ⚠️  Migrations might have failed. Check logs:"
-    echo "   docker compose -f docker-compose.prod.yml logs app"
-}
-
-echo ""
-echo "1️⃣3️⃣  Setting up automatic updates..."
+echo "1️⃣5️⃣  Setting up automatic updates..."
 # Create update script
 cat > /usr/local/bin/keepshot-update.sh << 'UPDATEEOF'
 #!/bin/bash
