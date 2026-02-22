@@ -1,10 +1,71 @@
-"""FastAPI dependencies including auth middleware"""
+"""FastAPI dependencies including JWT auth middleware"""
+from datetime import datetime, timedelta
 from typing import Optional
-from fastapi import Header, HTTPException, status
-from sqlalchemy.orm import Session
 
-from app.database import get_db
-from app.models.user import User
+from fastapi import Header, HTTPException, status
+
+from app.config import settings
+from app.core import jwt as _jwt
+from app.core.password import hash_password as _hash_password, verify_password as _verify_password
+
+
+def get_password_hash(password: str) -> str:
+    """Hash a plain-text password (PBKDF2-SHA256)."""
+    return _hash_password(password)
+
+
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    """Verify a plain-text password against a PBKDF2 hash."""
+    return _verify_password(plain_password, hashed_password)
+
+
+def create_access_token(user_id: str) -> str:
+    """
+    Create a signed HS256 JWT for the given user_id.
+
+    Raises RuntimeError if JWT_SECRET is not configured.
+    """
+    if not settings.jwt_secret:
+        raise RuntimeError("JWT_SECRET environment variable must be set to use token auth")
+
+    expire = datetime.utcnow() + timedelta(seconds=settings.jwt_expiration)
+    payload = {
+        "sub": user_id,
+        "exp": expire.timestamp(),
+        "iat": datetime.utcnow().timestamp(),
+    }
+    return _jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
+
+
+def _decode_token(token: str) -> str:
+    """
+    Decode and validate a JWT, returning the user_id ('sub' claim).
+
+    Raises HTTP 401 on any validation failure.
+    """
+    if not settings.jwt_secret:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="JWT_SECRET is not configured on the server",
+        )
+    try:
+        payload = _jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
+        user_id: Optional[str] = payload.get("sub")
+        if not user_id:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token: missing sub claim")
+        return user_id
+    except _jwt.ExpiredSignatureError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token has expired",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    except _jwt.InvalidTokenError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"Invalid token: {exc}",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
 
 async def get_current_user_id(
@@ -12,114 +73,22 @@ async def get_current_user_id(
     authorization: Optional[str] = Header(None),
 ) -> str:
     """
-    Auth-agnostic user identification middleware.
+    Resolve the authenticated user_id for a request.
 
-    Builders can replace this with their own authentication logic:
-    - JWT validation
-    - OAuth token verification
-    - API key lookup
-    - Portid token validation
-    - Session cookies
-    - etc.
-
-    For now, accepts user_id from header for simplicity.
-    In production, this should validate tokens/credentials.
+    Primary method: Bearer JWT in the Authorization header.
+    Fallback (DEBUG only): X-User-Id header for local development.
     """
+    # Primary: validate Bearer JWT
+    if authorization and authorization.startswith("Bearer "):
+        token = authorization.split(" ", 1)[1]
+        return _decode_token(token)
 
-    # Method 1: Direct user_id header (development/testing)
-    if x_user_id:
+    # Debug-only fallback: allow raw X-User-Id header
+    if settings.debug and x_user_id:
         return x_user_id
 
-    # Method 2: Bearer token (implement JWT/OAuth validation here)
-    if authorization and authorization.startswith("Bearer "):
-        token = authorization.split(" ")[1]
-        # TODO: Validate token and extract user_id
-        # For now, just use the token as user_id (NOT SECURE - EXAMPLE ONLY)
-        return token
-
-    # No authentication provided
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Authentication required. Provide X-User-Id header or Authorization token.",
+        detail="Authentication required. Provide 'Authorization: Bearer <token>'.",
         headers={"WWW-Authenticate": "Bearer"},
     )
-
-
-async def get_current_user(
-    user_id: str = Header(None, alias="X-User-Id"),
-    db: Session = None
-) -> User:
-    """
-    Get the current authenticated user from database.
-    Creates user if doesn't exist (for development ease).
-    """
-    if not db:
-        db = next(get_db())
-
-    user = db.query(User).filter(User.id == user_id).first()
-
-    if not user:
-        # Auto-create user for development
-        # In production, this should be handled by signup flow
-        user = User(id=user_id)
-        db.add(user)
-        db.commit()
-        db.refresh(user)
-
-    return user
-
-
-# Optional: JWT validation example (commented out)
-"""
-from datetime import datetime, timedelta
-import jwt
-from app.config import settings
-
-def create_access_token(user_id: str) -> str:
-    '''Create JWT access token'''
-    expire = datetime.utcnow() + timedelta(seconds=settings.jwt_expiration)
-    payload = {
-        "user_id": user_id,
-        "exp": expire,
-        "iat": datetime.utcnow(),
-    }
-    return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
-
-
-def verify_token(token: str) -> str:
-    '''Verify JWT token and return user_id'''
-    try:
-        payload = jwt.decode(
-            token,
-            settings.jwt_secret,
-            algorithms=[settings.jwt_algorithm]
-        )
-        user_id = payload.get("user_id")
-        if not user_id:
-            raise HTTPException(401, "Invalid token")
-        return user_id
-    except jwt.ExpiredSignatureError:
-        raise HTTPException(401, "Token expired")
-    except jwt.JWTError:
-        raise HTTPException(401, "Invalid token")
-"""
-
-
-# Optional: Portid validation example (commented out)
-"""
-from harboria_portid import PortIDClient
-
-portid_client = PortIDClient(
-    app_id="your-app-id",
-    sync_server_url="your-sync-server-url"
-)
-
-async def verify_portid_token(token: str) -> str:
-    '''Verify Portid token and return user_id'''
-    try:
-        # Validate with Portid sync server
-        user_data = await portid_client.verify_token(token)
-        return user_data["user_id"]
-    except Exception as e:
-        raise HTTPException(401, f"Portid validation failed: {str(e)}")
-"""

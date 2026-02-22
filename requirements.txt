@@ -46,7 +46,14 @@ requests==2.31.0
 # Logging & Monitoring
 structlog==24.1.0
 
-# Testing (optional, for development)
+# Auth
+# PyJWT kept for reference; JWT signing uses stdlib hmac (see app/core/jwt.py)
+# Password hashing uses stdlib hashlib.pbkdf2_hmac (see app/core/password.py)
+
+# Metrics
+prometheus-client>=0.20.0
+
+# Testing
 pytest==7.4.4
 pytest-asyncio==0.23.3
-httpx==0.26.0
+pytest-mock==3.12.0

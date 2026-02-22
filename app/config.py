@@ -11,13 +11,16 @@ class Settings(BaseSettings):
     database_url: str = "postgresql://keepshot:keepshot@localhost:5432/keepshot"
 
     # OpenAI
-    openai_api_key: str
+    openai_api_key: Optional[str] = None
     openai_model: str = "gpt-4o-mini"
 
     # Server
     host: str = "0.0.0.0"
     port: int = 8000
     debug: bool = False
+
+    # CORS
+    allowed_origins: list = ["*"]
 
     # Monitoring
     default_check_interval: int = 60  # minutes
@@ -27,7 +30,7 @@ class Settings(BaseSettings):
     storage_path: str = "/app/storage"
     max_file_size: int = 100  # MB
 
-    # Optional: JWT (for reference implementation)
+    # JWT authentication
     jwt_secret: Optional[str] = None
     jwt_algorithm: str = "HS256"
     jwt_expiration: int = 86400  # 24 hours

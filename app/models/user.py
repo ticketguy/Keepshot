@@ -17,7 +17,11 @@ class User(Base):
 
     id = Column(String, primary_key=True, index=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    extra_data = Column(JSON, default=dict)  # For custom builder data (renamed from metadata)
+    extra_data = Column(JSON, default=dict)  # For custom builder data
+
+    # Auth fields (used by the built-in JWT auth router)
+    username = Column(String, unique=True, nullable=True, index=True)
+    password_hash = Column(String, nullable=True)
 
     # Relationships
     bookmarks = relationship("Bookmark", back_populates="user", cascade="all, delete-orphan")
