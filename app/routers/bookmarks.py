@@ -17,6 +17,7 @@ from app.services.scraper import scraper
 from app.services.ai import ai_service
 from app.services.monitor import monitor_bookmark
 from app.core.logging import get_logger
+from app.metrics import BOOKMARKS_CREATED
 
 logger = get_logger(__name__)
 
@@ -97,6 +98,7 @@ async def create_bookmark(
 
         db.commit()
 
+        BOOKMARKS_CREATED.inc()
         logger.info(
             "bookmark_created",
             bookmark_id=bookmark.id,
