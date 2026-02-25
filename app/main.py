@@ -1,9 +1,11 @@
 """Main FastAPI application"""
 import re
 import time
+from collections import defaultdict
 from contextlib import asynccontextmanager
+from typing import Optional
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Response
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Response, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
@@ -11,6 +13,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.config import settings
 from app.core.logging import setup_logging, get_logger
+from app.core import jwt as _jwt
 from app.metrics import REQUEST_COUNT, REQUEST_LATENCY, ACTIVE_WEBSOCKETS
 from app.services.scheduler import start_scheduler, stop_scheduler
 
@@ -49,6 +52,51 @@ class MetricsMiddleware(BaseHTTPMiddleware):
         REQUEST_LATENCY.labels(method=request.method, path=path).observe(duration)
 
         return response
+
+
+# ── Rate limiting middleware ───────────────────────────────────────────────────
+# Simple sliding-window counter, keyed on client IP.
+# Exempt: /health, /metrics, /docs, /redoc, /openapi.json, /
+
+_RATE_EXEMPT = frozenset(["/health", "/metrics", "/", "/docs", "/redoc", "/openapi.json"])
+
+
+class RateLimitMiddleware(BaseHTTPMiddleware):
+    def __init__(self, app, calls_per_minute: int, calls_per_hour: int):
+        super().__init__(app)
+        self.per_minute = calls_per_minute
+        self.per_hour = calls_per_hour
+        self._min_log: dict[str, list[float]] = defaultdict(list)
+        self._hr_log: dict[str, list[float]] = defaultdict(list)
+
+    async def dispatch(self, request, call_next):
+        if request.url.path in _RATE_EXEMPT:
+            return await call_next(request)
+
+        key = (request.client.host if request.client else "unknown")
+        now = time.monotonic()
+
+        # Prune and check minute window
+        self._min_log[key] = [t for t in self._min_log[key] if now - t < 60]
+        if len(self._min_log[key]) >= self.per_minute:
+            return JSONResponse(
+                status_code=429,
+                content={"detail": "Rate limit exceeded — too many requests per minute"},
+                headers={"Retry-After": "60"},
+            )
+
+        # Prune and check hour window
+        self._hr_log[key] = [t for t in self._hr_log[key] if now - t < 3600]
+        if len(self._hr_log[key]) >= self.per_hour:
+            return JSONResponse(
+                status_code=429,
+                content={"detail": "Rate limit exceeded — too many requests per hour"},
+                headers={"Retry-After": "3600"},
+            )
+
+        self._min_log[key].append(now)
+        self._hr_log[key].append(now)
+        return await call_next(request)
 
 
 # ── WebSocket connection manager ───────────────────────────────────────────────
@@ -119,6 +167,12 @@ app = FastAPI(
 app.add_middleware(MetricsMiddleware)
 
 app.add_middleware(
+    RateLimitMiddleware,
+    calls_per_minute=settings.rate_limit_per_minute,
+    calls_per_hour=settings.rate_limit_per_hour,
+)
+
+app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.allowed_origins,
     allow_credentials=True,
@@ -153,24 +207,50 @@ async def metrics():
 # ── WebSocket ──────────────────────────────────────────────────────────────────
 
 @app.websocket("/ws/{user_id}")
-async def websocket_endpoint(websocket: WebSocket, user_id: str):
+async def websocket_endpoint(
+    websocket: WebSocket,
+    user_id: str,
+    token: Optional[str] = Query(None, description="JWT access token"),
+):
     """
     WebSocket endpoint for receiving real-time notifications.
 
-    Connect to: ws://localhost:8000/ws/{your_user_id}
+    **Authentication:** pass your JWT as a query parameter:
+      ws://host/ws/{user_id}?token=<access_token>
 
-    Messages format:
+    In DEBUG mode the token is optional (dev convenience).
+
+    Message format (server → client):
+    ```json
     {
-        "type": "notification",
-        "data": {
-            "id": "notification_id",
-            "title": "Notification title",
-            "message": "Notification message",
-            "bookmark_id": "bookmark_id",
-            "created_at": "2024-01-01T00:00:00Z"
-        }
+      "type": "notification",
+      "data": {
+        "id": "...", "title": "...", "message": "...",
+        "bookmark_id": "...", "created_at": "..."
+      }
     }
+    ```
+    Ping/pong: send any text, receive `{"type": "pong", "data": <echo>}`.
     """
+    # ── Authenticate ──────────────────────────────────────────────────────────
+    if token:
+        try:
+            payload = _jwt.decode(token, settings.jwt_secret or "", algorithms=[settings.jwt_algorithm])
+            token_user_id = payload.get("sub", "")
+            if token_user_id != user_id:
+                await websocket.close(code=4001, reason="Token user_id does not match path")
+                return
+        except _jwt.ExpiredSignatureError:
+            await websocket.close(code=4001, reason="Token expired")
+            return
+        except _jwt.InvalidTokenError:
+            await websocket.close(code=4001, reason="Invalid token")
+            return
+    elif not settings.debug:
+        await websocket.close(code=4001, reason="Authentication required — provide ?token=<jwt>")
+        return
+
+    # ── Accept & serve ────────────────────────────────────────────────────────
     await manager.connect(user_id, websocket)
     try:
         while True:
