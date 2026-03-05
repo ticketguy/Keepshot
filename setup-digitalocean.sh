@@ -1,7 +1,8 @@
 #!/bin/bash
 
 # KeepShot DigitalOcean Deployment Script
-# For deploying to api.keepshot.xyz
+# Single script — deploys backend (api.keepshot.xyz) + frontend (keepshot.xyz)
+# Run as root on a fresh Ubuntu/Debian droplet
 
 set -e
 
@@ -9,53 +10,57 @@ echo "🌊 KeepShot DigitalOcean Setup"
 echo "=============================="
 echo ""
 
-# Check if running as root
 if [ "$EUID" -ne 0 ]; then
     echo "❌ Please run as root (you should be by default on DigitalOcean)"
     exit 1
 fi
 
-# Configuration
-DOMAIN="api.keepshot.xyz"
-EMAIL=""  # Will prompt user
+# ── Configuration ────────────────────────────────────────────────────────────
+API_DOMAIN="api.keepshot.xyz"
+FRONTEND_DOMAIN="keepshot.xyz"
 REPO_URL="https://github.com/ticketguy/Keepshot.git"
-BRANCH="claude/learn-and-update-01LyYHSBzEmXj5iKwj5nqU3e"
+BRANCH="main"
 INSTALL_DIR="/opt/keepshot"
 
 echo "📋 Configuration:"
-echo "   Domain: $DOMAIN"
-echo "   Install Dir: $INSTALL_DIR"
+echo "   Backend  : https://$API_DOMAIN"
+echo "   Frontend : https://$FRONTEND_DOMAIN"
+echo "   Install  : $INSTALL_DIR"
 echo ""
 
-# Get email for SSL certificate
-read -p "Enter your email for SSL certificate: " EMAIL
+read -p "Enter your email for SSL certificates: " EMAIL
 if [ -z "$EMAIL" ]; then
-    echo "❌ Email is required for SSL certificate"
+    echo "❌ Email is required for SSL certificates"
     exit 1
 fi
 
 echo ""
-echo "Will deploy to: https://$DOMAIN"
-echo "SSL notifications to: $EMAIL"
-echo ""
-
 read -p "Continue? (y/N) " -n 1 -r
 echo
 if [[ ! $REPLY =~ ^[Yy]$ ]]; then
     exit 1
 fi
 
+# ── 1. System packages ────────────────────────────────────────────────────────
 echo ""
 echo "1️⃣  Updating system..."
 apt update && apt upgrade -y
-
-echo ""
-echo "2️⃣  Installing essential packages..."
 apt install -y curl git ufw
 
+# ── 2. Node.js (for frontend build) ──────────────────────────────────────────
+echo ""
+echo "2️⃣  Installing Node.js 20..."
+if ! command -v node &>/dev/null; then
+    curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+    apt-get install -y nodejs
+else
+    echo "   ✅ Node.js already installed ($(node --version))"
+fi
+
+# ── 3. Docker ─────────────────────────────────────────────────────────────────
 echo ""
 echo "3️⃣  Installing Docker..."
-if ! command -v docker &> /dev/null; then
+if ! command -v docker &>/dev/null; then
     curl -fsSL https://get.docker.com -o get-docker.sh
     sh get-docker.sh
     rm get-docker.sh
@@ -67,15 +72,15 @@ fi
 
 echo ""
 echo "4️⃣  Installing Docker Compose..."
-if ! docker compose version &> /dev/null; then
+if ! docker compose version &>/dev/null; then
     apt install -y docker-compose-plugin
 else
     echo "   ✅ Docker Compose already installed"
 fi
 
+# ── 4. Firewall ───────────────────────────────────────────────────────────────
 echo ""
 echo "5️⃣  Configuring firewall..."
-# Configure UFW
 ufw --force enable
 ufw default deny incoming
 ufw default allow outgoing
@@ -84,10 +89,11 @@ ufw allow 80/tcp comment 'HTTP'
 ufw allow 443/tcp comment 'HTTPS'
 ufw status
 
+# ── 5. Clone repo ─────────────────────────────────────────────────────────────
 echo ""
-echo "6️⃣  Cloning repository..."
+echo "6️⃣  Cloning repository ($BRANCH)..."
 if [ -d "$INSTALL_DIR" ]; then
-    echo "   ⚠️  Directory exists, pulling latest..."
+    echo "   Directory exists, pulling latest..."
     cd $INSTALL_DIR
     git pull origin $BRANCH
 else
@@ -95,167 +101,145 @@ else
     cd $INSTALL_DIR
 fi
 
+# ── 6. Environment file ───────────────────────────────────────────────────────
 echo ""
 echo "7️⃣  Creating environment file..."
 if [ ! -f .env ]; then
     cp .env.production .env
-
-    # Generate secure password
     PG_PASSWORD=$(openssl rand -base64 32 | tr -d "=+/" | cut -c1-25)
-
-    # Update .env with generated password
     sed -i "s/CHANGE_THIS_SECURE_PASSWORD/$PG_PASSWORD/g" .env
-
-    echo ""
     echo "   ✅ Created .env with secure database password"
-    echo "   ⚠️  IMPORTANT: You still need to add your OPENAI_API_KEY!"
-    echo ""
+    echo "   ⚠️  You still need to add your OPENAI_API_KEY!"
 else
     echo "   ✅ .env already exists"
 fi
 
+# ── 7. Directories ────────────────────────────────────────────────────────────
 echo ""
 echo "8️⃣  Creating required directories..."
 mkdir -p certbot/conf certbot/www nginx/conf.d storage logs
-
-# Ensure proper permissions
 chmod -R 755 nginx
-chmod +x setup-production.sh
 
+# ── 8. Build the React frontend ───────────────────────────────────────────────
 echo ""
-echo "9️⃣  Preparing nginx configuration..."
-# Temporarily use HTTP-only config for certificate acquisition
+echo "9️⃣  Building React frontend..."
+cd frontend
+npm ci --prefer-offline
+npm run build
+cd ..
+echo "   ✅ Frontend built → frontend/dist/"
+
+# ── 9. Bootstrap nginx + SSL for api.keepshot.xyz ────────────────────────────
+echo ""
+echo "🔟 Getting SSL certificate for $API_DOMAIN..."
+
+# Use HTTP-only nginx config so certbot can reach /.well-known/acme-challenge/
 if [ -f nginx/conf.d/api.keepshot.xyz.conf ]; then
     mv nginx/conf.d/api.keepshot.xyz.conf nginx/conf.d/api.keepshot.xyz.conf.ssl
-    echo "   ✅ Backed up SSL configuration"
+fi
+if [ -f nginx/conf.d/keepshot.xyz.conf ]; then
+    mv nginx/conf.d/keepshot.xyz.conf nginx/conf.d/keepshot.xyz.conf.ssl
 fi
 
-# Use init config for certificate acquisition
-if [ -f nginx/conf.d/api.keepshot.xyz.init.conf ]; then
-    cp nginx/conf.d/api.keepshot.xyz.init.conf nginx/conf.d/api.keepshot.xyz.conf
-    echo "   ✅ Using HTTP-only configuration for certificate acquisition"
-fi
+# Start nginx with HTTP-only configs
+docker compose -f docker-compose.prod.yml up -d nginx
+sleep 8
 
-echo ""
-echo "🔟 Starting production stack..."
-docker compose -f docker-compose.prod.yml up -d
-
-echo ""
-echo "1️⃣1️⃣  Waiting for services to start..."
-sleep 15
-
-echo ""
-echo "1️⃣2️⃣  Running database migrations..."
-docker compose -f docker-compose.prod.yml exec -T app alembic upgrade head || {
-    echo "   ⚠️  Migrations might have failed. Check logs:"
-    echo "   docker compose -f docker-compose.prod.yml logs app"
-}
-
-echo ""
-echo "1️⃣3️⃣  Getting SSL certificate..."
-echo "   Requesting SSL certificate from Let's Encrypt..."
 docker compose -f docker-compose.prod.yml run --rm certbot certonly \
     --webroot \
     --webroot-path=/var/www/certbot \
-    --email $EMAIL \
+    --email "$EMAIL" \
     --agree-tos \
     --no-eff-email \
     --non-interactive \
-    -d $DOMAIN || {
-        echo "❌ SSL certificate generation failed!"
-        echo "   This might be because:"
-        echo "   1. DNS is not propagated yet (wait 5-10 minutes)"
-        echo "   2. Domain doesn't point to this server"
-        echo "   3. Port 80 is not accessible"
-        echo ""
-        echo "   You can retry manually with:"
-        echo "   cd $INSTALL_DIR"
-        echo "   docker compose -f docker-compose.prod.yml run --rm certbot certonly --webroot --webroot-path=/var/www/certbot --email $EMAIL --agree-tos --no-eff-email -d $DOMAIN"
-        echo "   Then run: ./switch-to-https.sh"
-        echo ""
-        read -p "Continue without SSL? (y/N) " -n 1 -r
-        echo
-        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-            exit 1
-        fi
-        SSL_OBTAINED=false
+    -d "$API_DOMAIN" || {
+        echo "   ⚠️  SSL for $API_DOMAIN failed. Check DNS propagation and retry."
+        echo "   Re-run after fixing: ./setup-digitalocean.sh"
+        exit 1
     }
 
-# If SSL was obtained successfully, switch to HTTPS config
-if [ "$SSL_OBTAINED" != "false" ]; then
-    echo ""
-    echo "1️⃣4️⃣  Switching to HTTPS configuration..."
-    # Restore SSL config
-    if [ -f nginx/conf.d/api.keepshot.xyz.conf.ssl ]; then
-        mv nginx/conf.d/api.keepshot.xyz.conf.ssl nginx/conf.d/api.keepshot.xyz.conf
-        echo "   ✅ Restored SSL configuration"
-    fi
+echo "   ✅ SSL obtained for $API_DOMAIN"
 
-    # Reload nginx
-    docker compose -f docker-compose.prod.yml restart nginx
-    echo "   ✅ Nginx reloaded with HTTPS"
-fi
+# ── 10. SSL for keepshot.xyz ──────────────────────────────────────────────────
+echo ""
+echo "1️⃣1️⃣  Getting SSL certificate for $FRONTEND_DOMAIN..."
+
+docker compose -f docker-compose.prod.yml run --rm certbot certonly \
+    --webroot \
+    --webroot-path=/var/www/certbot \
+    --email "$EMAIL" \
+    --agree-tos \
+    --no-eff-email \
+    --non-interactive \
+    -d "$FRONTEND_DOMAIN" \
+    -d "www.$FRONTEND_DOMAIN" || {
+        echo "   ⚠️  SSL for $FRONTEND_DOMAIN failed. Check DNS propagation and retry."
+        echo "   Re-run after fixing: ./setup-digitalocean.sh"
+        exit 1
+    }
+
+echo "   ✅ SSL obtained for $FRONTEND_DOMAIN"
+
+# ── 11. Restore HTTPS nginx configs + start full stack ───────────────────────
+echo ""
+echo "1️⃣2️⃣  Switching to HTTPS configuration..."
+
+[ -f nginx/conf.d/api.keepshot.xyz.conf.ssl ] && \
+    mv nginx/conf.d/api.keepshot.xyz.conf.ssl nginx/conf.d/api.keepshot.xyz.conf
+
+[ -f nginx/conf.d/keepshot.xyz.conf.ssl ] && \
+    mv nginx/conf.d/keepshot.xyz.conf.ssl nginx/conf.d/keepshot.xyz.conf
+
+docker compose -f docker-compose.prod.yml down
 
 echo ""
-echo "1️⃣5️⃣  Setting up automatic updates..."
-# Create update script
+echo "1️⃣3️⃣  Starting full production stack..."
+docker compose -f docker-compose.prod.yml up -d
+sleep 15
+
+# ── 12. Database migrations ───────────────────────────────────────────────────
+echo ""
+echo "1️⃣4️⃣  Running database migrations..."
+docker compose -f docker-compose.prod.yml exec -T app alembic upgrade head || {
+    echo "   ⚠️  Migrations failed. Check: docker compose -f docker-compose.prod.yml logs app"
+}
+
+# ── 13. Auto-update script ────────────────────────────────────────────────────
 cat > /usr/local/bin/keepshot-update.sh << 'UPDATEEOF'
 #!/bin/bash
+set -e
 cd /opt/keepshot
 git pull
+cd frontend && npm ci --prefer-offline && npm run build && cd ..
 docker compose -f docker-compose.prod.yml build --no-cache
 docker compose -f docker-compose.prod.yml up -d
 docker compose -f docker-compose.prod.yml exec -T app alembic upgrade head
+docker compose -f docker-compose.prod.yml exec nginx nginx -s reload
+echo "✅ Update complete"
 UPDATEEOF
-
 chmod +x /usr/local/bin/keepshot-update.sh
 
+# ── Done ──────────────────────────────────────────────────────────────────────
 echo ""
 echo "✅ KeepShot deployment complete!"
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
-echo "🎉 Your API is deployed at: https://$DOMAIN"
+echo "   Frontend : https://$FRONTEND_DOMAIN"
+echo "   API      : https://$API_DOMAIN"
 echo ""
-echo "📋 IMPORTANT NEXT STEPS:"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
-echo "1️⃣  Add your OpenAI API key:"
+echo "⚠️  IMPORTANT — Add your OpenAI API key:"
 echo "   nano $INSTALL_DIR/.env"
-echo "   (Find OPENAI_API_KEY and add your key)"
+echo "   (set OPENAI_API_KEY=sk-...)"
 echo ""
-echo "2️⃣  Restart the app:"
-echo "   cd $INSTALL_DIR"
+echo "   Then restart the app:"
 echo "   docker compose -f docker-compose.prod.yml restart app"
 echo ""
-echo "3️⃣  Verify deployment:"
-echo "   curl https://$DOMAIN/health"
+echo "📊 Useful commands:"
+echo "   Logs    : docker compose -f docker-compose.prod.yml logs -f"
+echo "   Restart : docker compose -f docker-compose.prod.yml restart"
+echo "   Update  : /usr/local/bin/keepshot-update.sh"
+echo "   Health  : curl https://$API_DOMAIN/health"
 echo ""
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo ""
-echo "📚 USEFUL COMMANDS:"
-echo ""
-echo "View logs:"
-echo "  docker compose -f docker-compose.prod.yml logs -f"
-echo ""
-echo "Restart services:"
-echo "  docker compose -f docker-compose.prod.yml restart"
-echo ""
-echo "Update KeepShot:"
-echo "  /usr/local/bin/keepshot-update.sh"
-echo ""
-echo "Database backup:"
-echo "  docker compose -f docker-compose.prod.yml exec db pg_dump -U keepshot_prod keepshot_prod > backup.sql"
-echo ""
-echo "Monitor resources:"
-echo "  docker stats"
-echo ""
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo ""
-echo "📖 Full documentation:"
-echo "   - README.md: $INSTALL_DIR/README.md"
-echo "   - Deployment guide: $INSTALL_DIR/DEPLOYMENT.md"
-echo "   - API docs: https://$DOMAIN/docs"
-echo ""
-echo "🔐 Database password saved in: $INSTALL_DIR/.env"
-echo ""
-echo "Happy deploying! 🚀"
