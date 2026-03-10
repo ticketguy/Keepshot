@@ -1,6 +1,7 @@
 """Application configuration"""
 import os
-from typing import Optional
+from typing import Optional, List
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -10,17 +11,30 @@ class Settings(BaseSettings):
     # Database
     database_url: str = "postgresql://keepshot:keepshot@localhost:5432/keepshot"
 
+    # LLM provider — "openai" or "claude"
+    llm_provider: str = "openai"
+    llm_model: str = "gpt-4o-mini"
+
     # OpenAI
     openai_api_key: Optional[str] = None
-    openai_model: str = "gpt-4o-mini"
+
+    # Anthropic / Claude
+    anthropic_api_key: Optional[str] = None
 
     # Server
     host: str = "0.0.0.0"
     port: int = 8000
     debug: bool = False
 
-    # CORS
-    allowed_origins: list = ["*"]
+    # CORS — accepts a comma-separated string or a JSON list
+    allowed_origins: List[str] = ["*"]
+
+    @field_validator("allowed_origins", mode="before")
+    @classmethod
+    def parse_allowed_origins(cls, v):
+        if isinstance(v, str):
+            return [o.strip() for o in v.split(",") if o.strip()]
+        return v
 
     # Monitoring
     default_check_interval: int = 60  # minutes

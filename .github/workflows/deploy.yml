@@ -20,21 +20,23 @@ jobs:
           port: ${{ secrets.PROD_PORT || 22 }}
           script: |
             set -e
-            cd /home/user/Keepshot
+            cd /opt/keepshot
 
             # Pull latest code
             git pull origin main
 
-            # Install any new dependencies
-            pip3 install -r requirements.txt --quiet
+            # Build and restart
+            cd frontend && npm ci --prefer-offline && npm run build && cd ..
+            docker compose -f docker-compose.prod.yml build --no-cache
+            docker compose -f docker-compose.prod.yml up -d
 
             # Run migrations
-            python3 -m alembic upgrade head
+            docker compose -f docker-compose.prod.yml exec -T app alembic upgrade head
 
-            # Restart app (supervisor)
-            supervisorctl restart keepshot-app
+            # Reload nginx
+            docker compose -f docker-compose.prod.yml exec -T nginx nginx -s reload
 
-            # Confirm it's healthy
-            sleep 3
-            curl -sf http://localhost:8000/health
+            # Confirm healthy
+            sleep 5
+            curl -sf https://api.keepshot.xyz/health
             echo "Deploy complete"
