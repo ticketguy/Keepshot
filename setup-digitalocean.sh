@@ -35,11 +35,24 @@ if [ -z "$EMAIL" ]; then
 fi
 
 echo ""
-read -p "Enter your OpenAI API key (sk-...): " OPENAI_API_KEY
-if [ -z "$OPENAI_API_KEY" ]; then
-    echo "❌ OpenAI API key is required"
+read -p "LLM provider — openai or claude [openai]: " LLM_PROVIDER_INPUT
+LLM_PROVIDER="${LLM_PROVIDER_INPUT:-openai}"
+
+if [ "$LLM_PROVIDER" = "claude" ]; then
+    read -p "Enter your Anthropic API key (sk-ant-...): " LLM_API_KEY
+    LLM_MODEL_DEFAULT="claude-haiku-4-5-20251001"
+    LLM_KEY_VAR="ANTHROPIC_API_KEY"
+else
+    read -p "Enter your OpenAI API key (sk-...): " LLM_API_KEY
+    LLM_MODEL_DEFAULT="gpt-4o-mini"
+    LLM_KEY_VAR="OPENAI_API_KEY"
+fi
+if [ -z "$LLM_API_KEY" ]; then
+    echo "❌ API key is required"
     exit 1
 fi
+read -p "LLM model [$LLM_MODEL_DEFAULT]: " LLM_MODEL_INPUT
+LLM_MODEL="${LLM_MODEL_INPUT:-$LLM_MODEL_DEFAULT}"
 
 echo ""
 read -p "Enter a database password (or press Enter to auto-generate): " DB_PASSWORD_INPUT
@@ -134,8 +147,9 @@ POSTGRES_USER=keepshot
 POSTGRES_PASSWORD=${DB_PASSWORD}
 POSTGRES_DB=${DB_NAME}
 DATABASE_URL=postgresql://keepshot:${DB_PASSWORD}@db:5432/${DB_NAME}
-OPENAI_API_KEY=${OPENAI_API_KEY}
-OPENAI_MODEL=gpt-4o-mini
+LLM_PROVIDER=${LLM_PROVIDER}
+LLM_MODEL=${LLM_MODEL}
+${LLM_KEY_VAR}=${LLM_API_KEY}
 HOST=0.0.0.0
 PORT=8000
 DEBUG=false

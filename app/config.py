@@ -10,9 +10,15 @@ class Settings(BaseSettings):
     # Database
     database_url: str = "postgresql://keepshot:keepshot@localhost:5432/keepshot"
 
+    # LLM provider — "openai" or "claude"
+    llm_provider: str = "openai"
+    llm_model: str = "gpt-4o-mini"
+
     # OpenAI
     openai_api_key: Optional[str] = None
-    openai_model: str = "gpt-4o-mini"
+
+    # Anthropic / Claude
+    anthropic_api_key: Optional[str] = None
 
     # Server
     host: str = "0.0.0.0"
