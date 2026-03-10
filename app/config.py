@@ -1,6 +1,7 @@
 """Application configuration"""
 import os
-from typing import Optional
+from typing import Optional, List
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -25,8 +26,15 @@ class Settings(BaseSettings):
     port: int = 8000
     debug: bool = False
 
-    # CORS
-    allowed_origins: list = ["*"]
+    # CORS — accepts a comma-separated string or a JSON list
+    allowed_origins: List[str] = ["*"]
+
+    @field_validator("allowed_origins", mode="before")
+    @classmethod
+    def parse_allowed_origins(cls, v):
+        if isinstance(v, str):
+            return [o.strip() for o in v.split(",") if o.strip()]
+        return v
 
     # Monitoring
     default_check_interval: int = 60  # minutes
