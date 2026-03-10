@@ -183,13 +183,19 @@ echo "   ✅ Frontend built → frontend/dist/"
 echo ""
 echo "🔟 Getting SSL certificate for $API_DOMAIN..."
 
-# Use HTTP-only nginx config so certbot can reach /.well-known/acme-challenge/
-if [ -f nginx/conf.d/api.keepshot.xyz.conf ]; then
-    mv nginx/conf.d/api.keepshot.xyz.conf nginx/conf.d/api.keepshot.xyz.conf.ssl
-fi
-if [ -f nginx/conf.d/keepshot.xyz.conf ]; then
-    mv nginx/conf.d/keepshot.xyz.conf nginx/conf.d/keepshot.xyz.conf.ssl
-fi
+# Activate HTTP-only init configs for certbot phase.
+# Back up SSL configs to a temp dir and restore them on exit (success or failure)
+# so the *.conf.ssl broken-state can never happen again.
+SSL_BACKUP_DIR=$(mktemp -d)
+for conf in nginx/conf.d/api.keepshot.xyz.conf nginx/conf.d/keepshot.xyz.conf; do
+    [ -f "$conf" ] && mv "$conf" "$SSL_BACKUP_DIR/"
+done
+cp nginx/conf.d/api.keepshot.xyz.init.conf nginx/conf.d/api.keepshot.xyz.conf
+cp nginx/conf.d/keepshot.xyz.init.conf     nginx/conf.d/keepshot.xyz.conf
+trap 'echo "   Restoring SSL nginx configs..."; \
+      rm -f nginx/conf.d/api.keepshot.xyz.conf nginx/conf.d/keepshot.xyz.conf; \
+      cp "$SSL_BACKUP_DIR"/*.conf nginx/conf.d/ 2>/dev/null || true; \
+      rm -rf "$SSL_BACKUP_DIR"' EXIT
 
 # Start nginx with HTTP-only configs
 docker compose -f docker-compose.prod.yml up -d nginx
@@ -234,11 +240,11 @@ echo "   ✅ SSL obtained for $FRONTEND_DOMAIN"
 echo ""
 echo "1️⃣2️⃣  Switching to HTTPS configuration..."
 
-[ -f nginx/conf.d/api.keepshot.xyz.conf.ssl ] && \
-    mv nginx/conf.d/api.keepshot.xyz.conf.ssl nginx/conf.d/api.keepshot.xyz.conf
-
-[ -f nginx/conf.d/keepshot.xyz.conf.ssl ] && \
-    mv nginx/conf.d/keepshot.xyz.conf.ssl nginx/conf.d/keepshot.xyz.conf
+# Restore SSL configs manually (trap will be cleared so it doesn't double-restore)
+trap - EXIT
+rm -f nginx/conf.d/api.keepshot.xyz.conf nginx/conf.d/keepshot.xyz.conf
+cp "$SSL_BACKUP_DIR"/*.conf nginx/conf.d/
+rm -rf "$SSL_BACKUP_DIR"
 
 docker compose -f docker-compose.prod.yml down
 
