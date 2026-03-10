@@ -1,0 +1,40 @@
+name: Deploy to Production
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.PROD_HOST }}
+          username: ${{ secrets.PROD_USER }}
+          key: ${{ secrets.PROD_SSH_KEY }}
+          port: ${{ secrets.PROD_PORT || 22 }}
+          script: |
+            set -e
+            cd /home/user/Keepshot
+
+            # Pull latest code
+            git pull origin main
+
+            # Install any new dependencies
+            pip3 install -r requirements.txt --quiet
+
+            # Run migrations
+            python3 -m alembic upgrade head
+
+            # Restart app (supervisor)
+            supervisorctl restart keepshot-app
+
+            # Confirm it's healthy
+            sleep 3
+            curl -sf http://localhost:8000/health
+            echo "Deploy complete"
