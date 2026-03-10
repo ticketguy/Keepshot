@@ -35,6 +35,30 @@ if [ -z "$EMAIL" ]; then
 fi
 
 echo ""
+read -p "Enter your OpenAI API key (sk-...): " OPENAI_API_KEY
+if [ -z "$OPENAI_API_KEY" ]; then
+    echo "❌ OpenAI API key is required"
+    exit 1
+fi
+
+echo ""
+read -p "Enter a database password (or press Enter to auto-generate): " DB_PASSWORD_INPUT
+if [ -z "$DB_PASSWORD_INPUT" ]; then
+    DB_PASSWORD=$(openssl rand -base64 32 | tr -d "=+/" | cut -c1-25)
+    echo "   Auto-generated DB password: $DB_PASSWORD"
+else
+    DB_PASSWORD="$DB_PASSWORD_INPUT"
+fi
+
+echo ""
+read -p "Enter database name [keepshot]: " DB_NAME_INPUT
+DB_NAME="${DB_NAME_INPUT:-keepshot}"
+
+echo ""
+read -p "Enter allowed CORS origins [https://keepshot.xyz,https://app.keepshot.xyz,https://api.keepshot.xyz]: " CORS_INPUT
+CORS_ORIGINS="${CORS_INPUT:-https://keepshot.xyz,https://app.keepshot.xyz,https://api.keepshot.xyz}"
+
+echo ""
 read -p "Continue? (y/N) " -n 1 -r
 echo
 if [[ ! $REPLY =~ ^[Yy]$ ]]; then
@@ -105,13 +129,25 @@ fi
 echo ""
 echo "7️⃣  Creating environment file..."
 if [ ! -f .env ]; then
-    cp .env.production .env
-    PG_PASSWORD=$(openssl rand -base64 32 | tr -d "=+/" | cut -c1-25)
-    sed -i "s/CHANGE_THIS_SECURE_PASSWORD/$PG_PASSWORD/g" .env
-    echo "   ✅ Created .env with secure database password"
-    echo "   ⚠️  You still need to add your OPENAI_API_KEY!"
+    cat > .env << EOF
+POSTGRES_USER=keepshot
+POSTGRES_PASSWORD=${DB_PASSWORD}
+POSTGRES_DB=${DB_NAME}
+DATABASE_URL=postgresql://keepshot:${DB_PASSWORD}@db:5432/${DB_NAME}
+OPENAI_API_KEY=${OPENAI_API_KEY}
+OPENAI_MODEL=gpt-4o-mini
+HOST=0.0.0.0
+PORT=8000
+DEBUG=false
+ALLOWED_ORIGINS=${CORS_ORIGINS}
+DEFAULT_CHECK_INTERVAL=60
+MAX_CONCURRENT_CHECKS=20
+STORAGE_PATH=/app/storage
+MAX_FILE_SIZE=100
+EOF
+    echo "   ✅ Created .env"
 else
-    echo "   ✅ .env already exists"
+    echo "   ✅ .env already exists, skipping"
 fi
 
 # ── 7. Directories ────────────────────────────────────────────────────────────
@@ -229,13 +265,6 @@ echo "   Frontend : https://$FRONTEND_DOMAIN"
 echo "   API      : https://$API_DOMAIN"
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo ""
-echo "⚠️  IMPORTANT — Add your OpenAI API key:"
-echo "   nano $INSTALL_DIR/.env"
-echo "   (set OPENAI_API_KEY=sk-...)"
-echo ""
-echo "   Then restart the app:"
-echo "   docker compose -f docker-compose.prod.yml restart app"
 echo ""
 echo "📊 Useful commands:"
 echo "   Logs    : docker compose -f docker-compose.prod.yml logs -f"

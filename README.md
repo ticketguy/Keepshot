@@ -396,33 +396,41 @@ docker-compose up -d
 
 ### Production Deployment (keepshot.xyz)
 
-#### Option 1: VPS with Docker Compose + Nginx (Recommended)
+#### DigitalOcean / Any Ubuntu VPS (Recommended)
 
 1. **Setup DNS**
    ```
-   A Record: api.keepshot.xyz → [Your Server IP]
+   A Record: keepshot.xyz      → [Your Server IP]
+   A Record: api.keepshot.xyz  → [Your Server IP]
    ```
 
-2. **Clone and Configure**
+2. **SSH into your server and run the setup script**
    ```bash
-   git clone https://github.com/yourusername/keepshot.git
-   cd keepshot
-   cp .env.example .env
-   # Edit .env with production values
+   curl -fsSL https://raw.githubusercontent.com/ticketguy/Keepshot/main/setup-digitalocean.sh | bash
    ```
-
-3. **Deploy with SSL**
+   Or if you already have the repo:
    ```bash
-   docker-compose -f docker-compose.prod.yml up -d
+   bash /opt/keepshot/setup-digitalocean.sh
    ```
 
-This includes:
-- Nginx reverse proxy
-- Automatic SSL via Let's Encrypt
-- Production-ready PostgreSQL
-- Auto-restart on failure
+   The script will interactively ask for:
+   - SSL certificate email
+   - OpenAI API key
+   - Database password (or auto-generate one)
+   - Database name
+   - Allowed CORS origins
 
-See `DEPLOYMENT.md` for detailed instructions.
+   It then handles everything: Docker, Node.js, SSL certificates, frontend build, migrations, and starts the full stack.
+
+   After setup:
+   - Frontend : https://keepshot.xyz
+   - API      : https://api.keepshot.xyz
+   - Docs     : https://api.keepshot.xyz/docs
+
+3. **To update after a code change**
+   ```bash
+   keepshot-update.sh
+   ```
 
 #### Option 2: Cloud Platforms
 
