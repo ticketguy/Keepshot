@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Keepshot</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      width: 320px;
+      background: #0f172a;
+      color: #e2e8f0;
+    }
+
+    .header {
+      padding: 14px 16px;
+      background: #1e293b;
+      border-bottom: 1px solid #334155;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .header h1 { font-size: 16px; font-weight: 600; color: #f1f5f9; }
+    .header .dot { width: 8px; height: 8px; border-radius: 50%; background: #22c55e; }
+
+    /* ── Setup screen ── */
+    #setup-screen { padding: 16px; display: none; }
+    #setup-screen h2 { font-size: 13px; color: #94a3b8; margin-bottom: 12px; }
+
+    label { display: block; font-size: 12px; color: #94a3b8; margin-bottom: 4px; margin-top: 10px; }
+    input {
+      width: 100%;
+      padding: 8px 10px;
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 6px;
+      color: #f1f5f9;
+      font-size: 13px;
+      outline: none;
+    }
+    input:focus { border-color: #6366f1; }
+
+    /* ── Save screen ── */
+    #save-screen { padding: 16px; display: none; }
+
+    .page-info {
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 8px;
+      padding: 10px 12px;
+      margin-bottom: 12px;
+    }
+    .page-title { font-size: 13px; font-weight: 500; color: #f1f5f9; line-height: 1.4; margin-bottom: 4px; word-break: break-word; }
+    .page-url { font-size: 11px; color: #64748b; word-break: break-all; }
+
+    .type-row { display: flex; gap: 6px; margin-bottom: 12px; flex-wrap: wrap; }
+    .type-btn {
+      padding: 4px 10px;
+      border-radius: 20px;
+      border: 1px solid #334155;
+      background: transparent;
+      color: #94a3b8;
+      font-size: 11px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .type-btn.active, .type-btn:hover {
+      background: #6366f1;
+      border-color: #6366f1;
+      color: #fff;
+    }
+
+    .monitor-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 14px;
+      font-size: 12px;
+      color: #94a3b8;
+    }
+    .monitor-row input[type="checkbox"] { width: auto; }
+
+    /* ── Buttons ── */
+    .btn {
+      width: 100%;
+      padding: 9px;
+      border: none;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.15s;
+    }
+    .btn:hover { opacity: 0.85; }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-primary { background: #6366f1; color: #fff; }
+    .btn-danger  { background: #dc2626; color: #fff; margin-top: 8px; }
+
+    /* ── Status ── */
+    #status {
+      margin-top: 10px;
+      font-size: 12px;
+      text-align: center;
+      min-height: 18px;
+    }
+    .status-ok  { color: #22c55e; }
+    .status-err { color: #f87171; }
+
+    .settings-link {
+      text-align: center;
+      margin-top: 10px;
+      font-size: 11px;
+      color: #475569;
+      cursor: pointer;
+      text-decoration: underline;
+    }
+    .settings-link:hover { color: #94a3b8; }
+  </style>
+</head>
+<body>
+
+<div class="header">
+  <div class="dot"></div>
+  <h1>Keepshot</h1>
+</div>
+
+<!-- Setup / login screen -->
+<div id="setup-screen">
+  <h2>Connect to your Keepshot account</h2>
+
+  <label for="api-url">API URL</label>
+  <input id="api-url" type="url" placeholder="https://api.keepshot.xyz" />
+
+  <label for="username">Username</label>
+  <input id="username" type="text" placeholder="your-username" />
+
+  <label for="password">Password</label>
+  <input id="password" type="password" placeholder="••••••••" />
+
+  <br /><br />
+  <button class="btn btn-primary" id="login-btn">Connect</button>
+  <div id="setup-status" class="status-err" style="margin-top:8px;font-size:12px;text-align:center;"></div>
+</div>
+
+<!-- Save screen -->
+<div id="save-screen">
+  <div class="page-info">
+    <div class="page-title" id="page-title">Loading…</div>
+    <div class="page-url"  id="page-url"></div>
+  </div>
+
+  <div class="type-row">
+    <button class="type-btn active" data-type="url">URL</button>
+    <button class="type-btn" data-type="image">Image</button>
+    <button class="type-btn" data-type="video">Video</button>
+    <button class="type-btn" data-type="pdf">PDF</button>
+  </div>
+
+  <div class="monitor-row">
+    <input type="checkbox" id="monitor-toggle" />
+    <label for="monitor-toggle" style="margin:0;">Enable change monitoring</label>
+  </div>
+
+  <button class="btn btn-primary" id="save-btn">Save to Keepshot</button>
+  <div id="status"></div>
+  <div class="settings-link" id="logout-link">Disconnect account</div>
+</div>
+
+<script src="popup.js"></script>
+</body>
+</html>
