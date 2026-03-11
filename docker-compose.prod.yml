@@ -34,6 +34,7 @@ services:
       - STORAGE_PATH=/app/storage
       - MAX_FILE_SIZE=${MAX_FILE_SIZE:-100}
       - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-https://keepshot.xyz,https://app.keepshot.xyz,https://api.keepshot.xyz}
+      - JWT_SECRET=${JWT_SECRET}
     volumes:
       - ./storage:/app/storage
       - ./logs:/app/logs
