@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { useAuthStore } from './store/auth'
 import Layout from './components/layout/Layout'
+import Landing from './pages/Landing'
 import Login from './pages/Login'
 import Register from './pages/Register'
 import Dashboard from './pages/Dashboard'
@@ -21,6 +22,14 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         <Route
+          path="/"
+          element={
+            <GuestRoute>
+              <Landing />
+            </GuestRoute>
+          }
+        />
+        <Route
           path="/login"
           element={
             <GuestRoute>
@@ -37,16 +46,24 @@ export default function App() {
           }
         />
         <Route
-          path="/"
+          path="/dashboard"
           element={
             <ProtectedRoute>
               <Layout />
             </ProtectedRoute>
           }
         >
-          <Route index element={<Navigate to="/dashboard" replace />} />
-          <Route path="dashboard" element={<Dashboard />} />
-          <Route path="bookmarks" element={<Bookmarks />} />
+          <Route index element={<Dashboard />} />
+        </Route>
+        <Route
+          path="/bookmarks"
+          element={
+            <ProtectedRoute>
+              <Layout />
+            </ProtectedRoute>
+          }
+        >
+          <Route index element={<Bookmarks />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
