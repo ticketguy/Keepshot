@@ -1,10 +1,11 @@
 import { NavLink, useNavigate } from 'react-router-dom'
-import { LayoutDashboard, Bookmark, LogOut } from 'lucide-react'
+import { LayoutDashboard, Bookmark, Puzzle, LogOut } from 'lucide-react'
 import { useAuthStore } from '../../store/auth'
 
 const navItems = [
   { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/bookmarks', icon: Bookmark, label: 'Bookmarks' },
+  { to: '/bookmarklet', icon: Puzzle, label: 'Get Bookmarklet' },
 ]
 
 export default function Sidebar() {

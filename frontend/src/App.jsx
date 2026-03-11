@@ -6,6 +6,7 @@ import Login from './pages/Login'
 import Register from './pages/Register'
 import Dashboard from './pages/Dashboard'
 import Bookmarks from './pages/Bookmarks'
+import Bookmarklet from './pages/Bookmarklet'
 
 function ProtectedRoute({ children }) {
   const token = useAuthStore((s) => s.token)
@@ -64,6 +65,16 @@ export default function App() {
           }
         >
           <Route index element={<Bookmarks />} />
+        </Route>
+        <Route
+          path="/bookmarklet"
+          element={
+            <ProtectedRoute>
+              <Layout />
+            </ProtectedRoute>
+          }
+        >
+          <Route index element={<Bookmarklet />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
